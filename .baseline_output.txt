@@ -1,0 +1,148 @@
+
+[1m[36m╔════════════════════════════════════════╗
+║   SIMULADOR DE PAGE FAULT - SO (C++)   ║
+║         Gerenciamento de Memória       ║
+╚════════════════════════════════════════╝[0m
+
+Configurações:
+  • Tamanho da RAM: [1m5 frames[0m
+  • Número de páginas: [1m6[0m
+
+[1m[36m╔════════════════════════════════════════╗
+║        ESTADO DA MEMÓRIA RAM           ║
+╚════════════════════════════════════════╝[0m
+
+[1mFrame │ Página │ Status
+──────┼────────┼──────────────
+[0m    0 │ [33m     2[0m │ Ocupado
+    1 │ [33m     2[0m │ Ocupado
+    2 │ [32m LIVRE[0m │ Vago
+    3 │ [32m LIVRE[0m │ Vago
+    4 │ [32m LIVRE[0m │ Vago
+
+
+[1m[36m╔════════════════════════════════════════╗
+║     TABELA DE PÁGINAS DO PROCESSO      ║
+╚════════════════════════════════════════╝[0m
+
+[1mPágina │ Frame │ Validade │ Localização
+───────┼───────┼──────────┼────────────────────
+[0m     0 │ [31m    -[0m │    [31mi[0m     │ [31mDisco (Backing Store)[0m
+     1 │ [31m    -[0m │    [31mi[0m     │ [31mDisco (Backing Store)[0m
+     2 │ [32m    1[0m │    [32mv[0m     │ [32mRAM (Frame 1)[0m
+     3 │ [31m    -[0m │    [31mi[0m     │ [31mDisco (Backing Store)[0m
+     4 │ [31m    -[0m │    [31mi[0m     │ [31mDisco (Backing Store)[0m
+     5 │ [31m    -[0m │    [31mi[0m     │ [31mDisco (Backing Store)[0m
+
+
+[1m[36m╔════════════════════════════════════════╗
+║      INICIANDO SIMULAÇÃO DE ACESSOS    ║
+╚════════════════════════════════════════╝[0m
+
+[1mAcesso #1[0m   CPU solicita acesso à [33mPágina 2[0m
+--------------------------------------------------
+[32m  [HIT] Acesso bem-sucedido![0m
+   A página 2 está no Frame 1 da RAM.
+
+[1mAcesso #2[0m   CPU solicita acesso à [33mPágina 5[0m
+--------------------------------------------------
+[31m  [MISS] PAGE FAULT![0m
+   A página 5 não está na RAM.
+[36m   [SO] Buscando página 5 no disco (Backing Store)...
+   [SO] Carregando página 5 para a RAM...
+[32m   [RESTART] Instrução reiniciada! Página 5 agora está no Frame 2.
+[0m
+[1mAcesso #3[0m   CPU solicita acesso à [33mPágina 1[0m
+--------------------------------------------------
+[31m  [MISS] PAGE FAULT![0m
+   A página 1 não está na RAM.
+[36m   [SO] Buscando página 1 no disco (Backing Store)...
+   [SO] Carregando página 1 para a RAM...
+[32m   [RESTART] Instrução reiniciada! Página 1 agora está no Frame 3.
+[0m
+[1mAcesso #4[0m   CPU solicita acesso à [33mPágina 3[0m
+--------------------------------------------------
+[31m  [MISS] PAGE FAULT![0m
+   A página 3 não está na RAM.
+[36m   [SO] Buscando página 3 no disco (Backing Store)...
+   [SO] Carregando página 3 para a RAM...
+[32m   [RESTART] Instrução reiniciada! Página 3 agora está no Frame 4.
+[0m
+[1mAcesso #5[0m   CPU solicita acesso à [33mPágina 2[0m
+--------------------------------------------------
+[32m  [HIT] Acesso bem-sucedido![0m
+   A página 2 está no Frame 1 da RAM.
+
+[1mAcesso #6[0m   CPU solicita acesso à [33mPágina 4[0m
+--------------------------------------------------
+[31m  [MISS] PAGE FAULT![0m
+   A página 4 não está na RAM.
+[33m   [SO] Sem RAM livre, necessário algoritmo de substituição[0m
+[31m   [ABORTO] Acesso encerrado para a Página 4.
+[0m
+[1mAcesso #7[0m   CPU solicita acesso à [33mPágina 5[0m
+--------------------------------------------------
+[32m  [HIT] Acesso bem-sucedido![0m
+   A página 5 está no Frame 2 da RAM.
+
+[1mAcesso #8[0m   CPU solicita acesso à [33mPágina 0[0m
+--------------------------------------------------
+[31m  [MISS] PAGE FAULT![0m
+   A página 0 não está na RAM.
+[33m   [SO] Sem RAM livre, necessário algoritmo de substituição[0m
+[31m   [ABORTO] Acesso encerrado para a Página 0.
+[0m
+[1mAcesso #9[0m   CPU solicita acesso à [33mPágina 3[0m
+--------------------------------------------------
+[32m  [HIT] Acesso bem-sucedido![0m
+   A página 3 está no Frame 4 da RAM.
+
+[1mAcesso #10[0m   CPU solicita acesso à [33mPágina 4[0m
+--------------------------------------------------
+[31m  [MISS] PAGE FAULT![0m
+   A página 4 não está na RAM.
+[33m   [SO] Sem RAM livre, necessário algoritmo de substituição[0m
+[31m   [ABORTO] Acesso encerrado para a Página 4.
+[0m
+[1m[36m╔════════════════════════════════════════╗
+║        ESTADO DA MEMÓRIA RAM           ║
+╚════════════════════════════════════════╝[0m
+
+[1mFrame │ Página │ Status
+──────┼────────┼──────────────
+[0m    0 │ [33m     2[0m │ Ocupado
+    1 │ [33m     2[0m │ Ocupado
+    2 │ [33m     5[0m │ Ocupado
+    3 │ [33m     1[0m │ Ocupado
+    4 │ [33m     3[0m │ Ocupado
+
+
+[1m[36m╔════════════════════════════════════════╗
+║     TABELA DE PÁGINAS DO PROCESSO      ║
+╚════════════════════════════════════════╝[0m
+
+[1mPágina │ Frame │ Validade │ Localização
+───────┼───────┼──────────┼────────────────────
+[0m     0 │ [31m    -[0m │    [31mi[0m     │ [31mDisco (Backing Store)[0m
+     1 │ [32m    3[0m │    [32mv[0m     │ [32mRAM (Frame 3)[0m
+     2 │ [32m    1[0m │    [32mv[0m     │ [32mRAM (Frame 1)[0m
+     3 │ [32m    4[0m │    [32mv[0m     │ [32mRAM (Frame 4)[0m
+     4 │ [31m    -[0m │    [31mi[0m     │ [31mDisco (Backing Store)[0m
+     5 │ [32m    2[0m │    [32mv[0m     │ [32mRAM (Frame 2)[0m
+
+
+[1m[36m╔════════════════════════════════════════╗
+║           ESTATÍSTICAS FINAIS          ║
+╚════════════════════════════════════════╝[0m
+
+[1mTotal de acessos: [37m7[0m
+[32mAcessos bem-sucedidos: 4[0m
+[31mPage Faults: 3[0m
+[33mInterrupções: 3[0m
+[36mTaxa de acerto: 57.14%[0m
+
+
+[1m[36m╔════════════════════════════════════════╗
+║         SIMULAÇÃO FINALIZADA!          ║
+╚════════════════════════════════════════╝[0m
+
