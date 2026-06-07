@@ -1,276 +1,280 @@
-#include <iostream>    // Para entrada e saída de dados
-#include <vector>      // Para usar vetores dinâmicos
-#include <iomanip>     // Para formatação de saída
-#include <cstdlib>     // Para rand() e srand()
-#include <ctime>       // Para gerar números aleatórios
-#include <algorithm>   // Para operações com vetores
+#include <algorithm>
+#include <deque>
+#include <fstream>
+#include <iostream>
+#include <limits>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
-using namespace std;
-
-// Corezinhas :)
-const string VERDE = "\033[32m";
-const string VERMELHO = "\033[31m";
-const string AMARELO = "\033[33m";
-const string AZUL = "\033[34m";
-const string CIANO = "\033[36m";
-const string BRANCO = "\033[37m";
-const string NEGRITO = "\033[1m";
-const string RESET = "\033[0m";
-
-// Estrutura que representa uma entrada na Tabela de Páginas
-struct PaginaInfo {
-    int numero_frame;      // Número do frame onde a página está na RAM (-1 se não estiver)
-    char bit_validado;     // 'v' = válido (na RAM), 'i' = inválido (no disco)
+struct Frame {
+    int pid = -1;
+    int page = -1;
+    int last_used = -1;
 };
 
-// Classe que simula o sistema de paginação
-class SimuladorPageFault {
-private:
-    vector<int> ram;                           // Memória RAM (cada posição é um frame)
-    vector<PaginaInfo> tabela_paginas;         // Tabela de páginas do processo
-    int tamanho_ram;                           // Quantidade de frames na RAM
-    int numero_paginas;                        // Número total de páginas
-    int page_faults;                           // Contador de page faults
-    int acessos_bem_sucedidos;                 // Contador de acessos bem-sucedidos
-    int interrupcoes;                          // Contador de interrupções
-    
+struct Process {
+    int id = -1;
+    std::string name;
+    int arrival_time = 0;
+    std::vector<int> pages;
+    std::size_t next_page_index = 0;
+    int page_faults = 0;
+    int completion_time = -1;
+    int quantum_used = 0;
+    int blocked_until = -1;
+    std::unordered_map<int, int> page_to_frame;
+};
+
+struct EvictionInfo {
+    bool happened = false;
+    int evicted_pid = -1;
+    int evicted_page = -1;
+};
+
+class MemoryManager {
 public:
-    // Construtor para inicializar o simulador
-    SimuladorPageFault(int tam_ram, int num_paginas) 
-        : tamanho_ram(tam_ram), numero_paginas(num_paginas), 
-          page_faults(0), acessos_bem_sucedidos(0), interrupcoes(0) {
-        
-        ram.resize(tamanho_ram, -1);  // -1 indica frame vazio
-        tabela_paginas.resize(num_paginas);
-        
-        inicializar_sistema();
+    explicit MemoryManager(int ram_size) : frames_(ram_size) {}
+
+    bool has_page(const Process& process, int page) const {
+        return process.page_to_frame.find(page) != process.page_to_frame.end();
     }
-    
-    // Inicialização do sistema com aproximadamente 50% de frames ocupados
-    void inicializar_sistema() {
-        int frames_para_ocupar = tamanho_ram / 2;
-        
-        // Preencher metade dos frames com páginas aleatórias
-        for (int i = 0; i < frames_para_ocupar; i++) {
-            int pagina = rand() % numero_paginas;
-            ram[i] = pagina;
-            tabela_paginas[pagina].numero_frame = i;
-            tabela_paginas[pagina].bit_validado = 'v';
+
+    void touch(Process& process, int page, int time) {
+        const int frame_index = process.page_to_frame.at(page);
+        frames_[frame_index].last_used = time;
+    }
+
+    EvictionInfo load_page(std::vector<Process>& processes, int pid, int page, int time) {
+        EvictionInfo eviction;
+        int target_frame = find_free_frame();
+
+        if (target_frame == -1) {
+            target_frame = find_lru_frame();
+            eviction.happened = true;
+            eviction.evicted_pid = frames_[target_frame].pid;
+            eviction.evicted_page = frames_[target_frame].page;
+
+            Process& victim = processes[eviction.evicted_pid];
+            victim.page_to_frame.erase(eviction.evicted_page);
         }
-        
-        // Marcar páginas não carregadas como inválidas
-        for (int i = 0; i < numero_paginas; i++) {
-            if (tabela_paginas[i].bit_validado != 'v') {
-                tabela_paginas[i].numero_frame = -1;
-                tabela_paginas[i].bit_validado = 'i';
+
+        frames_[target_frame].pid = pid;
+        frames_[target_frame].page = page;
+        frames_[target_frame].last_used = time;
+        processes[pid].page_to_frame[page] = target_frame;
+
+        return eviction;
+    }
+
+private:
+    std::vector<Frame> frames_;
+
+    int find_free_frame() const {
+        for (std::size_t i = 0; i < frames_.size(); ++i) {
+            if (frames_[i].pid == -1) {
+                return static_cast<int>(i);
             }
         }
+        return -1;
     }
-    
-    // Simular o acesso a uma página
-    bool acessar_pagina(int numero_pagina) {
-        if (numero_pagina < 0 || numero_pagina >= numero_paginas) {
-            return false;
-        }
-        
-        // CASO 1: Acesso bem-sucedido (página está na RAM)
-        if (tabela_paginas[numero_pagina].bit_validado == 'v') {
-            acessos_bem_sucedidos++;
-            return true;
-        }
-        
-        // CASO 2 e 3: Página não está na RAM (Page Fault)
-        page_faults++;
-        
-        // Encontrar um frame vazio
-        int frame_livre = -1;
-        for (int i = 0; i < tamanho_ram; i++) {
-            if (ram[i] == -1) {
-                frame_livre = i;
-                break;
+
+    int find_lru_frame() const {
+        int frame_index = -1;
+        int oldest_time = std::numeric_limits<int>::max();
+
+        for (std::size_t i = 0; i < frames_.size(); ++i) {
+            if (frames_[i].last_used < oldest_time) {
+                oldest_time = frames_[i].last_used;
+                frame_index = static_cast<int>(i);
             }
         }
-        
-        // Se não houver frame livre, retornar false
-        if (frame_livre == -1) {
-            return false;
+
+        return frame_index;
+    }
+};
+
+struct SimulationInput {
+    int quantum = 0;
+    int io_penalty = 0;
+    int ram_size = 0;
+    std::vector<Process> processes;
+};
+
+std::vector<int> parse_pages(const std::string& pages_text) {
+    std::vector<int> pages;
+    std::stringstream ss(pages_text);
+    std::string token;
+
+    while (std::getline(ss, token, ',')) {
+        if (!token.empty()) {
+            pages.push_back(std::stoi(token));
         }
-        
-        // Carregar a página no frame livre
-        ram[frame_livre] = numero_pagina;
-        tabela_paginas[numero_pagina].numero_frame = frame_livre;
-        tabela_paginas[numero_pagina].bit_validado = 'v';
-        
+    }
+
+    return pages;
+}
+
+bool parse_input(std::istream& input, SimulationInput& data) {
+    if (!(input >> data.quantum >> data.io_penalty >> data.ram_size)) {
         return false;
     }
-    
-    // Exibir o estado atual da RAM
-    void exibir_ram() {
-        cout << "\n" << NEGRITO << CIANO << "╔════════════════════════════════════════╗\n"
-             << "║        ESTADO DA MEMÓRIA RAM           ║\n"
-             << "╚════════════════════════════════════════╝" << RESET << "\n\n";
-        
-        cout << NEGRITO << "Frame │ Página │ Status\n";
-        cout << "──────┼────────┼──────────────\n" << RESET;
-        
-        for (int i = 0; i < tamanho_ram; i++) {
-            cout << setw(5) << i << " │ ";
-            
-            if (ram[i] == -1) {
-                cout << VERDE << setw(6) << "LIVRE" << RESET;
-                cout << " │ Vago\n";
+
+    int arrival = 0;
+    std::string name;
+    std::string pages_text;
+    int pid = 0;
+
+    while (input >> arrival >> name >> pages_text) {
+        Process process;
+        process.id = pid++;
+        process.name = std::move(name);
+        process.arrival_time = arrival;
+        process.pages = parse_pages(pages_text);
+        data.processes.push_back(std::move(process));
+    }
+
+    std::sort(data.processes.begin(), data.processes.end(), [](const Process& a, const Process& b) {
+        if (a.arrival_time != b.arrival_time) {
+            return a.arrival_time < b.arrival_time;
+        }
+        return a.id < b.id;
+    });
+
+    for (std::size_t i = 0; i < data.processes.size(); ++i) {
+        data.processes[i].id = static_cast<int>(i);
+    }
+
+    return data.quantum > 0 && data.ram_size > 0 && !data.processes.empty();
+}
+
+int main(int argc, char* argv[]) {
+    std::ios::sync_with_stdio(false);
+    std::cin.tie(nullptr);
+
+    SimulationInput input_data;
+    std::ifstream file;
+
+    if (argc > 1) {
+        file.open(argv[1]);
+        if (!file.is_open() || !parse_input(file, input_data)) {
+            std::cerr << "Erro: nao foi possivel ler o arquivo de entrada.\n";
+            return 1;
+        }
+    } else {
+        if (!parse_input(std::cin, input_data)) {
+            std::cerr << "Erro: entrada invalida.\n";
+            return 1;
+        }
+    }
+
+    MemoryManager memory(input_data.ram_size);
+    std::vector<Process> processes = input_data.processes;
+    std::deque<int> ready_queue;
+    std::vector<int> blocked;
+    std::vector<std::string> logs;
+
+    int time = 0;
+    int next_arrival = 0;
+    int finished = 0;
+    int running_pid = -1;
+
+    auto log = [&](const std::string& message) {
+        logs.push_back("[Tempo " + std::to_string(time) + "] " + message);
+    };
+
+    while (finished < static_cast<int>(processes.size())) {
+        while (next_arrival < static_cast<int>(processes.size()) &&
+               processes[next_arrival].arrival_time <= time) {
+            ready_queue.push_back(next_arrival);
+            log("Processo " + processes[next_arrival].name + " chegou e entrou na fila de prontos");
+            ++next_arrival;
+        }
+
+        std::vector<int> still_blocked;
+        for (int pid : blocked) {
+            if (processes[pid].blocked_until <= time) {
+                ready_queue.push_back(pid);
+                log("Processo " + processes[pid].name + " saiu de bloqueado e voltou para prontos");
             } else {
-                cout << AMARELO << setw(6) << ram[i] << RESET;
-                cout << " │ Ocupado\n";
+                still_blocked.push_back(pid);
             }
         }
-        cout << "\n";
-    }
-    
-    // Exibir a Tabela de Páginas
-    void exibir_tabela_paginas() {
-        cout << "\n" << NEGRITO << CIANO << "╔════════════════════════════════════════╗\n"
-             << "║     TABELA DE PÁGINAS DO PROCESSO      ║\n"
-             << "╚════════════════════════════════════════╝" << RESET << "\n\n";
-        
-        cout << NEGRITO << "Página │ Frame │ Validade │ Localização\n";
-        cout << "───────┼───────┼──────────┼────────────────────\n" << RESET;
-        
-        for (int i = 0; i < numero_paginas; i++) {
-            cout << setw(6) << i << " │ ";
-            
-            if (tabela_paginas[i].numero_frame == -1) {
-                cout << VERMELHO << setw(5) << "-" << RESET << " │ ";
-            } else {
-                cout << VERDE << setw(5) << tabela_paginas[i].numero_frame << RESET << " │ ";
-            }
-            
-            cout << setw(8);
-            if (tabela_paginas[i].bit_validado == 'v') {
-                cout << VERDE << 'v' << RESET;
-            } else {
-                cout << VERMELHO << 'i' << RESET;
-            }
-            cout << "     │ ";
-            
-            if (tabela_paginas[i].bit_validado == 'v') {
-                cout << VERDE << "RAM (Frame " << tabela_paginas[i].numero_frame << ")" << RESET;
-            } else {
-                cout << VERMELHO << "Disco (Backing Store)" << RESET;
-            }
-            cout << "\n";
+        blocked.swap(still_blocked);
+
+        if (running_pid == -1 && !ready_queue.empty()) {
+            running_pid = ready_queue.front();
+            ready_queue.pop_front();
+            processes[running_pid].quantum_used = 0;
+            log("Escalonador RR selecionou " + processes[running_pid].name + " para CPU");
         }
-        cout << "\n";
-    }
-    
-    // Exibir estatísticas da simulação
-    void exibir_estatisticas() {
-        int total_acessos = acessos_bem_sucedidos + page_faults;
-        double taxa_acerto = (total_acessos > 0) ? 
-                             (double)acessos_bem_sucedidos / total_acessos * 100 : 0;
-        
-        cout << "\n" << NEGRITO << CIANO << "╔════════════════════════════════════════╗\n"
-             << "║           ESTATÍSTICAS FINAIS          ║\n"
-             << "╚════════════════════════════════════════╝" << RESET << "\n\n";
-        
-        cout << NEGRITO << "Total de acessos: " << BRANCO << total_acessos << RESET << "\n";
-        cout << VERDE << "Acessos bem-sucedidos: " << acessos_bem_sucedidos << RESET << "\n";
-        cout << VERMELHO << "Page Faults: " << page_faults << RESET << "\n";
-        cout << AMARELO << "Interrupções: " << interrupcoes << RESET << "\n";
-        cout << CIANO << setprecision(2) << fixed << "Taxa de acerto: " 
-             << taxa_acerto << "%" << RESET << "\n\n";
-    }
-    
-    // Executar a simulação com uma sequência de acessos
-    void executar_simulacao(vector<int>& sequencia_acessos) {
-        cout << "\n" << NEGRITO << CIANO << "╔════════════════════════════════════════╗\n"
-             << "║      INICIANDO SIMULAÇÃO DE ACESSOS    ║\n"
-             << "╚════════════════════════════════════════╝" << RESET << "\n";
-        
-        for (size_t i = 0; i < sequencia_acessos.size(); i++) {
-            int pagina = sequencia_acessos[i];
-            
-            cout << "\n" << NEGRITO << "Acesso #" << (i + 1) << RESET;
-            cout << "   CPU solicita acesso à " << AMARELO << "Página " << pagina << RESET << "\n";
-            cout << string(50, '-') << "\n";
-            
-            // Verificar validade da página
-            if (tabela_paginas[pagina].bit_validado == 'v') {
-                // CASO 1: Acesso bem-sucedido
-                cout << VERDE << "  [HIT] Acesso bem-sucedido!" << RESET << "\n";
-                cout << "   A página " << pagina << " está no Frame " 
-                     << tabela_paginas[pagina].numero_frame << " da RAM.\n";
-                acessar_pagina(pagina);
-            } else {
-                // CASO 2 e 3: Page Fault
-                cout << VERMELHO << "  [MISS] PAGE FAULT!" << RESET << "\n";
-                cout << "   A página " << pagina << " não está na RAM.\n";
-                
-                // Verificar se há frames livres
-                bool tem_frame_livre = false;
-                for (int j = 0; j < tamanho_ram; j++) {
-                    if (ram[j] == -1) {
-                        tem_frame_livre = true;
-                        break;
-                    }
-                }
-                
-                if (!tem_frame_livre) {
-                    cout << AMARELO << "   [SO] Sem RAM livre, necessário algoritmo de substituição" << RESET << "\n";
-                    interrupcoes++;
-                    cout << VERMELHO << "   [ABORTO] Acesso encerrado para a Página " << pagina << ".\n" << RESET;
-                    continue;
+
+        if (running_pid != -1) {
+            Process& p = processes[running_pid];
+            const int requested_page = p.pages[p.next_page_index];
+
+            if (!memory.has_page(p, requested_page)) {
+                ++p.page_faults;
+                log(p.name + " sofreu Page Fault na pagina " + std::to_string(requested_page));
+
+                const EvictionInfo eviction = memory.load_page(processes, running_pid, requested_page, time);
+                if (eviction.happened) {
+                    log("LRU removeu pagina " + std::to_string(eviction.evicted_page) +
+                        " de " + processes[eviction.evicted_pid].name + " para carregar pagina " +
+                        std::to_string(requested_page) + " de " + p.name);
+                } else {
+                    log("Pagina " + std::to_string(requested_page) + " de " + p.name + " carregada na RAM");
                 }
 
-                cout << CIANO << "   [SO] Buscando página " << pagina 
-                     << " no disco (Backing Store)...\n";
-                cout << "   [SO] Carregando página " << pagina << " para a RAM...\n";
+                p.blocked_until = time + input_data.io_penalty;
+                blocked.push_back(running_pid);
+                log(p.name + " movido para bloqueado ate o tempo " + std::to_string(p.blocked_until));
+                running_pid = -1;
+            } else {
+                memory.touch(p, requested_page, time);
+                ++p.next_page_index;
+                ++p.quantum_used;
+                log(p.name + " executou acesso da pagina " + std::to_string(requested_page) + " (RAM hit)");
 
-                acessar_pagina(pagina);
-
-                cout << VERDE << "   [RESTART] Instrução reiniciada! Página " << pagina 
-                     << " agora está no Frame " << tabela_paginas[pagina].numero_frame << ".\n" << RESET;
+                if (p.next_page_index >= p.pages.size()) {
+                    p.completion_time = time + 1;
+                    ++finished;
+                    log("Processo " + p.name + " finalizou");
+                    running_pid = -1;
+                } else if (p.quantum_used >= input_data.quantum) {
+                    ready_queue.push_back(running_pid);
+                    log("Quantum expirou para " + p.name + ", processo preemptado para o fim da fila");
+                    running_pid = -1;
+                }
             }
+        } else {
+            log("CPU ociosa");
         }
-        
-        exibir_ram();
-        exibir_tabela_paginas();
-        exibir_estatisticas();
-    }
-};
 
-int main() {
-    srand(time(0));
-    
-    // Configuraçõesiniciais da simulação
-    int TAMANHO_RAM = 5;        // 5 frames na RAM
-    int NUMERO_PAGINAS = 6;     // 6 páginas no processo
-    
-    // Criar o simulador
-    SimuladorPageFault simulador(TAMANHO_RAM, NUMERO_PAGINAS);
-    
-    // Exibir estado inicial
-    cout << "\n" << NEGRITO << CIANO << "╔════════════════════════════════════════╗\n"
-         << "║   SIMULADOR DE PAGE FAULT - SO (C++)   ║\n"
-         << "║         Gerenciamento de Memória       ║\n"
-         << "╚════════════════════════════════════════╝" << RESET << "\n";
-    
-    cout << "\nConfigurações:\n";
-    cout << "  • Tamanho da RAM: " << NEGRITO << TAMANHO_RAM << " frames" << RESET << "\n";
-    cout << "  • Número de páginas: " << NEGRITO << NUMERO_PAGINAS << RESET << "\n";
-    
-    simulador.exibir_ram();
-    simulador.exibir_tabela_paginas();
-    
-    // Sequência de acessos (exemplo do enunciado)
-    vector<int> sequencia_acessos = {2, 5, 1, 3, 2, 4, 5, 0, 3, 4};
-    
-    // Executar a simulação
-    simulador.executar_simulacao(sequencia_acessos);
-    
-    cout << "\n" << NEGRITO << CIANO << "╔════════════════════════════════════════╗\n"
-         << "║         SIMULAÇÃO FINALIZADA!          ║\n"
-         << "╚════════════════════════════════════════╝" << RESET << "\n\n";
-    
+        ++time;
+    }
+
+    std::cout << "=== Relatorio Final ===\n";
+    std::cout << "Quantum: " << input_data.quantum << "\n";
+    std::cout << "Penalidade IO: " << input_data.io_penalty << "\n";
+    std::cout << "Tamanho RAM: " << input_data.ram_size << "\n\n";
+
+    std::cout << "Tempo de retorno por processo:\n";
+    for (const Process& p : processes) {
+        std::cout << "- " << p.name << ": " << (p.completion_time - p.arrival_time) << "\n";
+    }
+
+    std::cout << "\nTotal de page faults por processo:\n";
+    for (const Process& p : processes) {
+        std::cout << "- " << p.name << ": " << p.page_faults << "\n";
+    }
+
+    std::cout << "\nLog de execucao:\n";
+    for (const std::string& entry : logs) {
+        std::cout << entry << "\n";
+    }
+
     return 0;
 }
