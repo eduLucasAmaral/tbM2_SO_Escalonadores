@@ -1,0 +1,2 @@
+g++ -std=c++17 -Wall -Wextra -pedantic simulador_page_fault.cpp -o simulador_page_fault
+./simulador_page_fault arquivo_teste.txt
