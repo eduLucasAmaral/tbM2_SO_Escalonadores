@@ -1,13 +1,13 @@
-#include <algorithm>
-#include <climits>
-#include <fstream>
-#include <iostream>
-#include <limits>
-#include <queue>
-#include <sstream>
-#include <string>
-#include <unordered_map>
-#include <vector>
+#include <algorithm> // Para sort e max
+#include <climits> // Para LLONG_MAX
+#include <fstream> // Para ifstream
+#include <iostream> // Para cout e cin
+#include <limits> // Para numeric_limits
+#include <queue> // Para priority_queue
+#include <sstream> // Para istringstream e ostringstream
+#include <string> // Para string
+#include <unordered_map> // Para unordered_map
+#include <vector> // Para vetores
 
 using namespace std;
 
