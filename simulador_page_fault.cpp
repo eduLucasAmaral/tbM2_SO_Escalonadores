@@ -188,9 +188,9 @@ private:
             if (!ram[i].ocupado) {
                 return i;
             }
-            if (ram[i].ultimo_uso < menor_uso ||
+            if (ram[i].ultimo_uso < menor_uso || // Se encontrar um frame com uso mais antigo, ou em caso de empate, escolher o de menor indice
                 (ram[i].ultimo_uso == menor_uso && (escolhido == -1 || i < escolhido))) {
-                menor_uso = ram[i].ultimo_uso;
+                menor_uso = ram[i].ultimo_uso; // Atualiza o menor uso encontrado
                 escolhido = i;
             }
         }
